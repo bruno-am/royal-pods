@@ -4,16 +4,24 @@ import { useState } from 'react'
 import { useCart } from '../context/CartContext'
 
 export default function CarrinhoBarra() {
-  const { carrinho, totalItens, valorTotal, limparCarrinho, adicionarAoCarrinho, diminuirQuantidade } = useCart()
+  const { 
+    carrinho, 
+    totalItens, 
+    valorTotal, 
+    limparCarrinho, 
+    adicionarAoCarrinho, 
+    diminuirQuantidade 
+  } = useCart()
   
   const [modalAberto, setModalAberto] = useState(false)
   const [nomeCliente, setNomeCliente] = useState('')
   const [endereco, setEndereco] = useState('')
   const [formaPagamento, setFormaPagamento] = useState('Pix')
+  const [carregandoCheckout, setCarregandoCheckout] = useState(false)
 
   if (totalItens === 0) return null
 
-  const fecharPedidoWhatsApp = (e: React.FormEvent) => {
+  const processarCheckout = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!nomeCliente.trim() || !endereco.trim()) {
@@ -21,24 +29,36 @@ export default function CarrinhoBarra() {
       return
     }
 
-    const itensTexto = carrinho
-      .map(item => `• *${item.quantidade}x* ${item.nome} - R$ ${(Number(item.preco) * item.quantidade).toFixed(2)}`)
-      .join('\n')
-    
-    const textoMensagem = 
-      `👑 *NOVO PEDIDO - ROYAL POD'S* 👑\n\n` +
-      `👤 *Cliente:* ${nomeCliente}\n` +
-      `📍 *Endereço:* ${endereco}\n` +
-      `💳 *Forma de Pagamento:* ${formaPagamento}\n\n` +
-      `📦 *Itens do Pedido:*\n${itensTexto}\n\n` +
-      `💵 *Total: R$ ${valorTotal.toFixed(2)}*\n\n` +
-      `*Aguardando confirmação...*`
+    setCarregandoCheckout(true)
 
-    const numeroLoja = "------NUMERO DO WPP------" 
-    const url = `https://wa.me/${numeroLoja}?text=${encodeURIComponent(textoMensagem)}`
-    window.open(url, '_blank')
-    
-    setModalAberto(false)
+    try {
+      const itensMercadoPago = carrinho.map(item => ({
+        id: item.id,
+        title: item.nome,
+        quantity: item.quantidade,
+        unit_price: Number(item.preco)
+      }))
+
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itensMercadoPago })
+      })
+
+      const data = await response.json()
+
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        alert('Erro ao gerar o link de pagamento. Tente novamente.')
+        setCarregandoCheckout(false)
+      }
+
+    } catch (error) {
+      console.error(error)
+      alert('Ocorreu um erro ao conectar com o banco.')
+      setCarregandoCheckout(false)
+    }
   }
 
   return (
@@ -78,7 +98,7 @@ export default function CarrinhoBarra() {
         </div>
       </div>
 
-      {/* JANELA FLUTUANTE */}
+      {/* JANELA FLUTUANTE (MODAL DE CHECKOUT) */}
       {modalAberto && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-[#111113] border border-gray-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
@@ -90,7 +110,7 @@ export default function CarrinhoBarra() {
               <p className="text-gray-400 text-xs mt-1">Revise seus itens e preencha a entrega.</p>
             </div>
 
-            {/* LISTA DE PRODUTOS */}
+            {/* LISTA DE PRODUTOS COM CONTROLE DE + E - */}
             <div className="mb-6 space-y-2 max-h-40 overflow-y-auto pr-2">
               {carrinho.map((item) => (
                 <div key={item.id} className="flex justify-between items-center bg-[#18181b] p-3 rounded-xl border border-gray-800/50">
@@ -99,7 +119,7 @@ export default function CarrinhoBarra() {
                     <span className="text-gray-400 text-xs">R$ {(Number(item.preco) * item.quantidade).toFixed(2)}</span>
                   </div>
                   
-                  {/* Controles de Quantidade */}
+                  {/* Controles de Quantidade em Bloco */}
                   <div className="flex items-center bg-[#111113] border border-gray-800 rounded-lg overflow-hidden">
                     <button
                       type="button"
@@ -123,7 +143,7 @@ export default function CarrinhoBarra() {
               ))}
             </div>
 
-            <form onSubmit={fecharPedidoWhatsApp} className="space-y-4">
+            <form onSubmit={processarCheckout} className="space-y-4">
               <div>
                 <label className="block text-gray-400 text-xs font-bold uppercase tracking-wider mb-1.5">Seu Nome</label>
                 <input 
@@ -141,7 +161,7 @@ export default function CarrinhoBarra() {
                 <textarea 
                   required
                   rows={2}
-                  placeholder="Rua, número, bairro e CEP"
+                  placeholder="Ex: 12345-678, Rua das Flores, 123, Centro, São Paulo"
                   value={endereco}
                   onChange={(e) => setEndereco(e.target.value)}
                   className="w-full bg-[#18181b] border border-gray-800 focus:border-yellow-500 rounded-xl px-4 py-3 text-white text-sm focus:outline-none resize-none"
@@ -151,7 +171,7 @@ export default function CarrinhoBarra() {
               <div>
                 <label className="block text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Forma de Pagamento</label>
                 <div className="grid grid-cols-2 gap-2">
-                  {['Pix', 'Cartão de crédito/débito'].map((opcao) => (
+                  {['Pix', 'Cartão'].map((opcao) => (
                     <button
                       key={opcao}
                       type="button"
@@ -166,6 +186,9 @@ export default function CarrinhoBarra() {
                     </button>
                   ))}
                 </div>
+                <p className="text-[10px] text-gray-500 mt-2 text-center">
+                  O pagamento será processado de forma segura na próxima tela.
+                </p>
               </div>
 
               <div className="border-t border-gray-800 my-6 pt-4 flex justify-between items-center">
@@ -183,9 +206,10 @@ export default function CarrinhoBarra() {
                 </button>
                 <button
                   type="submit"
-                  className="w-2/3 bg-green-500 hover:bg-green-400 text-black font-black uppercase tracking-wider py-3.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2"
+                  disabled={carregandoCheckout}
+                  className="w-2/3 bg-green-500 hover:bg-green-400 text-black font-black uppercase tracking-wider py-3.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2 shadow-[0_4px_15px_rgba(34,197,94,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Concluir compra no WhatsApp
+                  {carregandoCheckout ? 'Processando...' : 'Pagar Agora'}
                 </button>
               </div>
             </form>
